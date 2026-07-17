@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetScan — Network Reconnaissance Tool</title>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg:       #030712;
+            --surface:  #0f172a;
+            --border:   #1e293b;
+            --blue:     #3b82f6;
+            --cyan:     #06b6d4;
+            --text:     #94a3b8;
+            --bright:   #e2e8f0;
+            --dim:      #334155;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ── Top bar ── */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 32px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(3,7,18,0.95);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(8px);
+        }
+
+        .brand {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+        }
+
+        .brand-name {
+            font-family: 'Syne', sans-serif;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--bright);
+            letter-spacing: -0.5px;
+        }
+
+        .brand-tag {
+            font-size: 10px;
+            color: var(--cyan);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .sys-status {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            font-size: 10px;
+            letter-spacing: 2px;
+            color: var(--dim);
+        }
+
+        .sys-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .sys-pill-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--cyan);
+            animation: blink 3s infinite;
+        }
+
+        @keyframes blink {
+            0%, 90%, 100% { opacity: 1; }
+            95% { opacity: 0.2; }
+        }
+
+        /* ── Layout ── */
+        .workspace {
+            display: grid;
+            grid-template-columns: 380px 1fr;
+            min-height: calc(100vh - 53px);
+        }
+
+        /* ── Left panel ── */
+        .left-panel {
+            border-right: 1px solid var(--border);
+            padding: 40px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        /* Radar widget */
+        .radar-wrap {
+            display: flex;
+            justify-content: center;
+        }
+
+        .radar {
+            position: relative;
+            width: 200px;
+            height: 200px;
+        }
+
+        .radar svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        .radar-sweep {
+            transform-origin: 100px 100px;
+            animation: none;
+        }
+
+        .radar-sweep.scanning {
+            animation: sweep 2s linear infinite;
+        }
+
+        @keyframes sweep {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
+
+        /* Blip dots that appear during scan */
+        .radar-blip {
+            position: absolute;
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--cyan);
+            box-shadow: 0 0 6px var(--cyan);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        /* ── Form ── */
+        .panel-label {
+            font-size: 10px;
+            letter-spacing: 3px;
+            color: var(--dim);
+            text-transform: uppercase;
+            margin-bottom: 10px;
+        }
+
+        .input-block { display: flex; flex-direction: column; gap: 6px; }
+
+        .styled-input, .styled-select {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 12px 14px;
+            color: var(--bright);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            width: 100%;
+        }
+
+        .styled-input:focus, .styled-select:focus {
+            border-color: var(--blue);
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.1);
+        }
+
+        .styled-select option { background: var(--surface); }
+
+        .scan-trigger {
+            position: relative;
+            overflow: hidden;
+            background: var(--blue);
+            color: #ffffff;
+            border: none;
+            border-radius: 4px;
+            padding: 14px;
+            width: 100%;
+            font-family: 'Syne', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .scan-trigger:hover { background: #2563eb; }
+        .scan-trigger:disabled { background: var(--dim); cursor: not-allowed; }
+
+        .scan-trigger::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+            transform: translateX(-100%);
+        }
+
+        .scan-trigger.scanning::after {
+            animation: shimmer 1.5s infinite;
+        }
+
+        @keyframes shimmer {
+            to { transform: translateX(100%); }
+        }
+
+        .warning {
+            font-size: 10px;
+            color: var(--dim);
+            line-height: 1.6;
+            padding: 10px 12px;
+            border-left: 2px solid var(--border);
+        }
+
+        /* ── Right panel ── */
+        .right-panel {
+            padding: 40px 40px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .idle-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            gap: 16px;
+            color: var(--dim);
+        }
+
+        .idle-grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 6px;
+            opacity: 0.15;
+            margin-bottom: 8px;
+        }
+
+        .idle-cell {
+            width: 28px; height: 28px;
+            border: 1px solid var(--border);
+            border-radius: 2px;
+        }
+
+        .idle-cell.lit { background: var(--blue); opacity: 0.4; }
+
+        .idle-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--dim);
+            letter-spacing: -0.5px;
+        }
+
+        .idle-sub { font-size: 11px; letter-spacing: 2px; }
+
+        /* Loading */
+        .loading-state {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+        }
+
+        .loading-state.active { display: flex; }
+
+        .loading-log {
+            width: 100%;
+            max-width: 500px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 20px;
+            font-size: 12px;
+            line-height: 2;
+            color: var(--text);
+        }
+
+        .log-line { display: flex; gap: 12px; }
+        .log-time { color: var(--dim); }
+        .log-msg { color: var(--cyan); }
+        .log-msg.done { color: #4ade80; }
+
+        /* Results */
+        .results-state { display: none; }
+        .results-state.active { display: block; }
+
+        .results-topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .results-host {
+            font-family: 'Syne', sans-serif;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--bright);
+            letter-spacing: -0.5px;
+        }
+
+        .results-host span { color: var(--cyan); }
+
+        .export-json {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 1px;
+        }
+
+        .export-json:hover { border-color: var(--blue); color: var(--blue); }
+
+        .meta-strip {
+            display: flex;
+            gap: 0;
+            margin-bottom: 28px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .meta-cell {
+            flex: 1;
+            padding: 12px 16px;
+            border-right: 1px solid var(--border);
+        }
+
+        .meta-cell:last-child { border-right: none; }
+
+        .meta-cell-label {
+            font-size: 9px;
+            letter-spacing: 2px;
+            color: var(--dim);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .meta-cell-value {
+            font-size: 13px;
+            color: var(--bright);
+        }
+
+        .meta-cell-value.accent { color: var(--cyan); }
+
+        /* Port table */
+        .port-table { width: 100%; border-collapse: collapse; }
+
+        .port-table thead tr {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .port-table th {
+            font-size: 9px;
+            letter-spacing: 2px;
+            color: var(--dim);
+            padding: 10px 14px;
+            text-align: left;
+            text-transform: uppercase;
+        }
+
+        .port-table td {
+            padding: 13px 14px;
+            border-bottom: 1px solid rgba(30,41,59,0.5);
+            font-size: 12px;
+            vertical-align: top;
+        }
+
+        .port-table tr:hover td { background: rgba(15,23,42,0.6); }
+
+        .port-num {
+            color: var(--blue);
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .open-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(6,182,212,0.08);
+            border: 1px solid rgba(6,182,212,0.2);
+            color: var(--cyan);
+            padding: 3px 10px;
+            border-radius: 3px;
+            font-size: 10px;
+            letter-spacing: 1px;
+        }
+
+        .open-badge::before {
+            content: '';
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            background: var(--cyan);
+        }
+
+        .svc { color: #f59e0b; font-size: 12px; }
+
+        .banner {
+            color: var(--dim);
+            font-size: 11px;
+            word-break: break-all;
+            max-width: 360px;
+            line-height: 1.5;
+        }
+
+        .banner.live { color: #94a3b8; }
+
+        .no-ports {
+            text-align: center;
+            padding: 60px;
+            color: var(--dim);
+        }
+
+        .error-panel {
+            background: rgba(239,68,68,0.06);
+            border: 1px solid rgba(239,68,68,0.2);
+            border-radius: 6px;
+            padding: 16px 20px;
+            color: #f87171;
+            font-size: 12px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .workspace { grid-template-columns: 1fr; }
+            .left-panel { border-right: none; border-bottom: 1px solid var(--border); }
+            .right-panel { padding: 24px 20px; }
+            .meta-strip { flex-wrap: wrap; }
+            .topbar { padding: 12px 20px; }
+            .sys-status { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="topbar">
+    <div class="brand">
+        <div class="brand-name">NetScan</div>
+        <div class="brand-tag">recon</div>
+    </div>
+    <div class="sys-status">
+        <div class="sys-pill">
+            <div class="sys-pill-dot"></div>
+            SYSTEM READY
+        </div>
+        <div id="clockDisplay"></div>
+    </div>
+</header>
+
+<main class="workspace">
+
+    <!-- Left: controls -->
+    <aside class="left-panel">
+
+        <!-- Radar -->
+        <div class="radar-wrap">
+            <div class="radar">
+                <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Grid circles -->
+                    <circle cx="100" cy="100" r="90" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+                    <circle cx="100" cy="100" r="60" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+                    <circle cx="100" cy="100" r="30" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+                    <!-- Cross hairs -->
+                    <line x1="100" y1="10" x2="100" y2="190" stroke="#1e293b" stroke-width="0.5"/>
+                    <line x1="10" y1="100" x2="190" y2="100" stroke="#1e293b" stroke-width="0.5"/>
+                    <!-- Center dot -->
+                    <circle cx="100" cy="100" r="3" fill="#3b82f6"/>
+                    <!-- Sweep arm -->
+                    <g class="radar-sweep" id="radarSweep">
+                        <defs>
+                            <radialGradient id="sweepGrad" cx="0%" cy="50%" r="100%">
+                                <stop offset="0%" stop-color="#06b6d4" stop-opacity="0.6"/>
+                                <stop offset="100%" stop-color="#06b6d4" stop-opacity="0"/>
+                            </radialGradient>
+                        </defs>
+                        <path d="M100,100 L100,10 A90,90 0 0,1 190,100 Z" fill="url(#sweepGrad)" opacity="0.4"/>
+                        <line x1="100" y1="100" x2="100" y2="10" stroke="#06b6d4" stroke-width="1.5" opacity="0.8"/>
+                    </g>
+                </svg>
+                <!-- Blips injected by JS -->
+            </div>
+        </div>
+
+        <!-- Target input -->
+        <div>
+            <div class="panel-label">Target</div>
+            <div class="input-block">
+                <input class="styled-input" type="text" id="target"
+                    placeholder="host or IP address"
+                    autocomplete="off" spellcheck="false">
+            </div>
+        </div>
+
+        <!-- Port range -->
+        <div>
+            <div class="panel-label">Port Range</div>
+            <select class="styled-select" id="port_range">
+                <option value="common">Common — 24 key ports</option>
+                <option value="top100">Top 100 ports</option>
+                <option value="full">Full range — 1 to 1024</option>
+            </select>
+        </div>
+
+        <!-- Scan button -->
+        <button class="scan-trigger" id="scanBtn" onclick="startScan()">
+            INITIATE SCAN
+        </button>
+
+        <div class="warning">
+            Only scan systems you own or have written permission to test. Unauthorized port scanning may be illegal in your jurisdiction.
+        </div>
+
+    </aside>
+
+    <!-- Right: output -->
+    <section class="right-panel">
+
+        <!-- Idle -->
+        <div class="idle-state" id="idleState">
+            <div class="idle-grid" id="idleGrid"></div>
+            <div class="idle-title">Awaiting target</div>
+            <div class="idle-sub">enter a host and initiate scan</div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading-state" id="loadingState">
+            <div class="loading-log" id="loadingLog"></div>
+        </div>
+
+        <!-- Results -->
+        <div class="results-state" id="resultsState">
+            <div class="results-topbar">
+                <div class="results-host" id="resultsHost"></div>
+                <button class="export-json" onclick="exportJSON()">↓ export json</button>
+            </div>
+            <div class="meta-strip" id="metaStrip"></div>
+            <div id="portsOutput"></div>
+        </div>
+
+    </section>
+</main>
+
+<script>
+    let lastScanData = null;
+
+    // Clock
+    function updateClock() {
+        const now = new Date();
+        document.getElementById('clockDisplay').textContent =
+            now.toISOString().replace('T',' ').slice(0,19) + ' UTC';
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // Idle grid
+    const grid = document.getElementById('idleGrid');
+    for (let i = 0; i < 32; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'idle-cell' + (Math.random() > 0.7 ? ' lit' : '');
+        grid.appendChild(cell);
+    }
+
+    // Radar blips
+    function addBlip(x, y) {
+        const radar = document.querySelector('.radar');
+        const blip = document.createElement('div');
+        blip.className = 'radar-blip';
+        blip.style.left = x + '%';
+        blip.style.top = y + '%';
+        radar.appendChild(blip);
+        setTimeout(() => blip.style.opacity = '1', 10);
+        setTimeout(() => { blip.style.opacity = '0'; setTimeout(() => blip.remove(), 300); }, 2000);
+    }
+
+    let blipInterval = null;
+
+    function startRadar() {
+        document.getElementById('radarSweep').classList.add('scanning');
+        blipInterval = setInterval(() => {
+            const angle = Math.random() * Math.PI * 2;
+            const r = 20 + Math.random() * 35;
+            const x = 50 + r * Math.cos(angle);
+            const y = 50 + r * Math.sin(angle);
+            addBlip(x, y);
+        }, 600);
+    }
+
+    function stopRadar() {
+        document.getElementById('radarSweep').classList.remove('scanning');
+        if (blipInterval) { clearInterval(blipInterval); blipInterval = null; }
+    }
+
+    // Log lines
+    const logMessages = [
+        'Resolving hostname...',
+        'Opening socket connections...',
+        'Probing port range...',
+        'Grabbing service banners...',
+        'Fingerprinting services...',
+        'Compiling results...'
+    ];
+
+    function animateLogs(onDone) {
+        const log = document.getElementById('loadingLog');
+        log.innerHTML = '';
+        let i = 0;
+        const interval = setInterval(() => {
+            if (i >= logMessages.length) { clearInterval(interval); return; }
+            const now = new Date().toISOString().slice(11,19);
+            const line = document.createElement('div');
+            line.className = 'log-line';
+            line.innerHTML = `<span class="log-time">[${now}]</span><span class="log-msg">» ${logMessages[i]}</span>`;
+            log.appendChild(line);
+            i++;
+        }, 400);
+    }
+
+    // Show/hide states
+    function showState(name) {
+        document.getElementById('idleState').style.display = name === 'idle' ? '' : 'none';
+        document.getElementById('loadingState').classList.toggle('active', name === 'loading');
+        document.getElementById('resultsState').classList.toggle('active', name === 'results');
+    }
+
+    async function startScan() {
+        const target = document.getElementById('target').value.trim();
+        const portRange = document.getElementById('port_range').value;
+
+        if (!target) {
+            document.getElementById('target').focus();
+            return;
+        }
+
+        document.getElementById('scanBtn').disabled = true;
+        document.getElementById('scanBtn').classList.add('scanning');
+        document.getElementById('scanBtn').textContent = 'SCANNING...';
+
+        showState('loading');
+        startRadar();
+        animateLogs();
+
+        const formData = new FormData();
+        formData.append('target', target);
+        formData.append('port_range', portRange);
+
+        try {
+            const response = await fetch('/scan', { method: 'POST', body: formData });
+            const data = await response.json();
+            lastScanData = data;
+
+            // Show final log line
+            const log = document.getElementById('loadingLog');
+            const now = new Date().toISOString().slice(11,19);
+            const done = document.createElement('div');
+            done.className = 'log-line';
+            done.innerHTML = `<span class="log-time">[${now}]</span><span class="log-msg done">✓ Scan complete — ${data.open_ports || 0} open ports found</span>`;
+            log.appendChild(done);
+
+            setTimeout(() => {
+                stopRadar();
+                displayResults(data);
+            }, 800);
+
+        } catch (err) {
+            stopRadar();
+            showState('results');
+            document.getElementById('portsOutput').innerHTML =
+                `<div class="error-panel">Connection failed: ${err.message}</div>`;
+        } finally {
+            document.getElementById('scanBtn').disabled = false;
+            document.getElementById('scanBtn').classList.remove('scanning');
+            document.getElementById('scanBtn').textContent = 'INITIATE SCAN';
+        }
+    }
+
+    function displayResults(data) {
+        if (data.error) {
+            showState('results');
+            document.getElementById('resultsHost').textContent = 'Error';
+            document.getElementById('metaStrip').innerHTML = '';
+            document.getElementById('portsOutput').innerHTML =
+                `<div class="error-panel">${data.error}</div>`;
+            return;
+        }
+
+        document.getElementById('resultsHost').innerHTML =
+            `<span>${data.target}</span> &nbsp;<span style="color:#334155;font-size:14px">${data.ip}</span>`;
+
+        document.getElementById('metaStrip').innerHTML = `
+            <div class="meta-cell">
+                <div class="meta-cell-label">Open Ports</div>
+                <div class="meta-cell-value accent">${data.open_ports}</div>
+            </div>
+            <div class="meta-cell">
+                <div class="meta-cell-label">Scanned</div>
+                <div class="meta-cell-value">${data.total_ports_scanned}</div>
+            </div>
+            <div class="meta-cell">
+                <div class="meta-cell-label">Duration</div>
+                <div class="meta-cell-value">${data.scan_duration}s</div>
+            </div>
+            <div class="meta-cell">
+                <div class="meta-cell-label">Hostname</div>
+                <div class="meta-cell-value">${data.hostname}</div>
+            </div>
+            <div class="meta-cell">
+                <div class="meta-cell-label">Scan Time</div>
+                <div class="meta-cell-value">${data.scan_time}</div>
+            </div>
+        `;
+
+        if (data.ports.length === 0) {
+            document.getElementById('portsOutput').innerHTML =
+                `<div class="no-ports">No open ports found on target</div>`;
+        } else {
+            const rows = data.ports.map(p => `
+                <tr>
+                    <td><span class="port-num">${p.port}</span></td>
+                    <td><span class="open-badge">OPEN</span></td>
+                    <td><span class="svc">${p.service}</span></td>
+                    <td><span class="banner ${p.banner !== 'N/A' ? 'live' : ''}">${p.banner}</span></td>
+                </tr>
+            `).join('');
+
+            document.getElementById('portsOutput').innerHTML = `
+                <table class="port-table">
+                    <thead>
+                        <tr>
+                            <th>Port</th>
+                            <th>Status</th>
+                            <th>Service</th>
+                            <th>Banner</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+        }
+
+        showState('results');
+    }
+
+    function exportJSON() {
+        if (!lastScanData) return;
+        const blob = new Blob([JSON.stringify(lastScanData, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `netscan_${lastScanData.target}_${Date.now()}.json`;
+        a.click();
+    }
+
+    document.getElementById('target').addEventListener('keypress', e => {
+        if (e.key === 'Enter') startScan();
+    });
+
+    showState('idle');
+</script>
+</body>
+</html>
